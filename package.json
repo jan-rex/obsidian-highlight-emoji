@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-custom-highlights",
+  "name": "obsidian-highlight-emoji",
   "version": "1.0.0",
   "description": "Custom highlights with emojis for Obsidian",
   "main": "main.js",
