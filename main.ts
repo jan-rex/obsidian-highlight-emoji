@@ -56,6 +56,30 @@ export default class CustomHighlightPlugin extends Plugin {
         this.registerEditorExtension(this.createHighlightExtension());
         this.registerEditorSuggest(new ColorSuggest(this.app, this));
 
+        this.registerDomEvent(document, 'keydown', (evt: KeyboardEvent) => {
+            if (evt.key === '=') {
+                const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+                if (!view) return;
+                const editor = view.editor;
+                const selection = editor.getSelection();
+                if (selection) {
+                    // Check after a tiny delay if the selection was wrapped in ==
+                    setTimeout(() => {
+                        const cursor = editor.getCursor();
+                        const line = editor.getLine(cursor.line);
+                        const sub = line.substring(0, cursor.ch);
+                        if (sub.endsWith('==')) {
+                            const startPos = sub.lastIndexOf('==', sub.length - 3);
+                            if (startPos !== -1) {
+                                // Trigger suggest by moving cursor to after first ==
+                                editor.setCursor({ line: cursor.line, ch: startPos + 2 });
+                            }
+                        }
+                    }, 50);
+                }
+            }
+        });
+
         this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
             const target = evt.target as HTMLElement;
             const view = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -85,11 +109,12 @@ export default class CustomHighlightPlugin extends Plugin {
 
                     // If we clicked within a highlight
                     if (relativePos >= start && relativePos <= end) {
-                        // Check if we clicked near the start (the emoji part)
-                        // In Live Preview, the emoji is at relativePos match.index + 2
-                        const isNearStart = relativePos <= start + 5;
+                        const emoji = match[1];
+                        // Show menu only if clicking on emoji or on the starting markers == (if no emoji)
+                        const isEmojiClicked = emoji && (relativePos >= start + 2 && relativePos <= start + 2 + emoji.length);
+                        const isMarkerClicked = !emoji && (relativePos >= start && relativePos <= start + 2);
 
-                        if (isNearStart) {
+                        if (isEmojiClicked || isMarkerClicked) {
                             const content = match[2];
                             const menu = new Menu();
                             Object.keys(this.settings.styles).forEach(emoji => {
@@ -125,15 +150,22 @@ export default class CustomHighlightPlugin extends Plugin {
                     if (cursor.ch >= start && cursor.ch <= end) {
                         const content = match[2];
 
-                        Object.keys(this.settings.styles).forEach(emoji => {
-                            menu.addItem((item) => {
-                                item.setTitle(`${emoji} ${getEmojiName(emoji)}`)
-                                    .setIcon("highlighter")
-                                    .onClick(() => {
-                                        editor.replaceRange(`==${emoji}${content}==`,
-                                            { line: cursor.line, ch: start },
-                                            { line: cursor.line, ch: end });
-                                    });
+                        menu.addItem((item) => {
+                            item.setTitle("Highlight Color")
+                                .setIcon("highlighter")
+                                .setSection("format");
+
+                            const subMenu = (item as any).setSubmenu();
+
+                            Object.keys(this.settings.styles).forEach(emoji => {
+                                subMenu.addItem((subItem: any) => {
+                                    subItem.setTitle(`${emoji} ${getEmojiName(emoji)}`)
+                                        .onClick(() => {
+                                            editor.replaceRange(`==${emoji}${content}==`,
+                                                { line: cursor.line, ch: start },
+                                                { line: cursor.line, ch: end });
+                                        });
+                                });
                             });
                         });
                         break;
@@ -213,34 +245,29 @@ export default class CustomHighlightPlugin extends Plugin {
                     border: ${style.borderWidth} solid ${style.borderColor} !important;
                     border-radius: ${style.borderRadius} !important;
                     padding: 0 2px;
-                    box-decoration-break: slice;
-                    -webkit-box-decoration-break: slice;
                 }
 
-                /* Unified look when active in Live Preview by removing internal borders/radii on fragments */
-                .cm-s-obsidian .${className}.cm-custom-highlight-active {
+                /* Unified look for fragmented highlights */
+                .cm-s-obsidian .${className}.cm-custom-highlight-start {
+                    border-right: none !important;
+                    border-top-right-radius: 0 !important;
+                    border-bottom-right-radius: 0 !important;
+                }
+                .cm-s-obsidian .${className}.cm-custom-highlight-middle {
                     border-left: none !important;
                     border-right: none !important;
                     border-radius: 0 !important;
                 }
-
-                /* Re-add borders only to the outer edges of the active highlight if we could,
-                   but since fragments are many, we target the formatting markers specifically if possible,
-                   or just use a more subtle style for the active state. */
-                .cm-s-obsidian .${className}.cm-custom-highlight-active:first-of-type {
-                    /* This doesn't reliably work for spans, but we'll use a better approach:
-                       Applying the border to the whole range and letting it slice. */
+                .cm-s-obsidian .${className}.cm-custom-highlight-end {
+                    border-left: none !important;
+                    border-top-left-radius: 0 !important;
+                    border-bottom-left-radius: 0 !important;
                 }
             `;
         }
         css += `
             .cm-custom-highlight-hidden {
                 display: none !important;
-            }
-            /* Try to force a unified box-decoration */
-            .cm-s-obsidian span[class*="highlight-"] {
-                box-decoration-break: slice;
-                -webkit-box-decoration-break: slice;
             }
         `;
         this.styleElement.textContent = css;
@@ -279,22 +306,16 @@ export default class CustomHighlightPlugin extends Plugin {
 
                         const isCursorInside = selection.ranges.some(r => r.from <= end && r.to >= start);
 
-                        if (isLivePreview) {
-                            if (isCursorInside) {
-                                // Unified box when cursor is inside
-                                // Avoid adding multiple overlapping decorations to prevent fragmented borders
-                                builder.add(start, end, Decoration.mark({
-                                    class: `${className} cm-custom-highlight-active`
-                                }));
-                            } else {
-                                // Hidden markers when cursor is outside
-                                builder.add(start, start + 2 + emoji.length, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
-                                builder.add(start + 2 + emoji.length, end - 2, Decoration.mark({ class: className }));
-                                builder.add(end - 2, end, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
-                            }
+                        if (isLivePreview && !isCursorInside) {
+                            // Hidden markers when cursor is outside
+                            builder.add(start, start + 2 + emoji.length, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
+                            builder.add(start + 2 + emoji.length, end - 2, Decoration.mark({ class: className }));
+                            builder.add(end - 2, end, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
                         } else {
-                            // Source Mode: just style the content, don't hide anything
-                            builder.add(start, end, Decoration.mark({ class: className }));
+                            // Source Mode or Cursor Inside: Unified look
+                            builder.add(start, start + 2, Decoration.mark({ class: `${className} cm-custom-highlight-start` }));
+                            builder.add(start + 2, end - 2, Decoration.mark({ class: `${className} cm-custom-highlight-middle` }));
+                            builder.add(end - 2, end, Decoration.mark({ class: `${className} cm-custom-highlight-end` }));
                         }
                     }
                 }
@@ -346,10 +367,28 @@ class ColorSuggest extends EditorSuggest<string> {
 
     selectSuggestion(value: string, evt: MouseEvent | KeyboardEvent): void {
         const { editor, start, end } = this.context!;
-        const replacement = `==${value}==`;
-        editor.replaceRange(replacement, start, end);
-        // Move cursor between the emoji and the closing ==
-        editor.setCursor({ line: start.line, ch: start.ch + 2 + value.length });
+        const line = editor.getLine(start.line);
+        const rest = line.substring(end.ch);
+
+        // Check if we are already inside some highlight markers
+        // This happens during selection wrap or when editing an existing highlight
+        const hasClosing = rest.includes('==');
+
+        if (hasClosing) {
+            // Check if we are replacing an existing emoji or just the ==
+            const emojiRegex = /^[🔴🟠🟡🟢🔵🟣⚫⚪🟤]/u;
+            const match = rest.match(emojiRegex);
+            if (match) {
+                editor.replaceRange(`==${value}`, start, { line: start.line, ch: end.ch + match[0].length });
+            } else {
+                editor.replaceRange(`==${value}`, start, end);
+            }
+        } else {
+            // New highlight: add both opening and closing markers
+            editor.replaceRange(`==${value}==`, start, end);
+            // Position cursor between emoji and closing markers
+            editor.setCursor({ line: start.line, ch: start.ch + 2 + value.length });
+        }
     }
 }
 
