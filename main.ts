@@ -56,32 +56,6 @@ export default class CustomHighlightPlugin extends Plugin {
         this.registerEditorExtension(this.createHighlightExtension());
         this.registerEditorSuggest(new ColorSuggest(this.app, this));
 
-        this.registerEvent(this.app.workspace.on("editor-change", (editor, view) => {
-            // Check if we just wrapped a selection with ==
-            // This is a bit tricky to detect perfectly without knowing the previous state,
-            // but we can look for the pattern ==text== where the cursor is at the end.
-            const cursor = editor.getCursor();
-            const line = editor.getLine(cursor.line);
-            const sub = line.substring(0, cursor.ch);
-
-            // If the line now ends with == and has another == before it,
-            // and it was likely a selection wrap
-            if (sub.endsWith('==')) {
-                const lastTwo = sub.substring(sub.length - 2);
-                const beforeThat = sub.substring(0, sub.length - 2);
-                const startPos = beforeThat.lastIndexOf('==');
-
-                if (startPos !== -1) {
-                    const content = beforeThat.substring(startPos + 2);
-                    // If content doesn't contain == or emojis, it was likely a fresh wrap
-                    if (content.length > 0 && !content.includes('==') && !/[🔴🟠🟡🟢🔵🟣⚫⚪🟤]/.test(content)) {
-                        // Move cursor to after the first == to trigger the color picker
-                        editor.setCursor({ line: cursor.line, ch: startPos + 2 });
-                    }
-                }
-            }
-        }));
-
         this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
             const target = evt.target as HTMLElement;
             const view = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -91,7 +65,8 @@ export default class CustomHighlightPlugin extends Plugin {
             // Only trigger if clicking on Start, End or Emoji fragments
             const isClickableFragment = target.classList.contains('cm-custom-highlight-start') ||
                                        target.classList.contains('cm-custom-highlight-end') ||
-                                       target.classList.contains('cm-custom-highlight-emoji');
+                                       target.classList.contains('cm-custom-highlight-emoji') ||
+                                       target.classList.contains('cm-custom-highlight-clickable');
 
             if (isClickableFragment) {
                 const editor = view.editor;
@@ -236,7 +211,8 @@ export default class CustomHighlightPlugin extends Plugin {
             const className = `highlight-${getEmojiName(emoji)}`;
             css += `
                 .markdown-rendered .${className},
-                .cm-s-obsidian .${className} {
+                .cm-s-obsidian .${className},
+                .cm-s-obsidian .cm-highlight.${className} {
                     background-color: ${style.backgroundColor} !important;
                     color: ${style.textColor} !important;
                     border: ${style.borderWidth} solid ${style.borderColor} !important;
@@ -246,26 +222,31 @@ export default class CustomHighlightPlugin extends Plugin {
                     background-clip: padding-box !important;
                     box-decoration-break: slice !important;
                     -webkit-box-decoration-break: slice !important;
+                    box-shadow: none !important;
                 }
 
                 /* Unified look for fragmented highlights */
-                .cm-s-obsidian .${className}.cm-custom-highlight-start {
+                .cm-s-obsidian .${className}.cm-custom-highlight-start,
+                .cm-s-obsidian .cm-highlight.${className}.cm-custom-highlight-start {
                     border-right: none !important;
                     border-top-right-radius: 0 !important;
                     border-bottom-right-radius: 0 !important;
                     padding-left: 2px !important;
                 }
-                .cm-s-obsidian .${className}.cm-custom-highlight-emoji {
+                .cm-s-obsidian .${className}.cm-custom-highlight-emoji,
+                .cm-s-obsidian .cm-highlight.${className}.cm-custom-highlight-emoji {
                     border-left: none !important;
                     border-right: none !important;
                     border-radius: 0 !important;
                 }
-                .cm-s-obsidian .${className}.cm-custom-highlight-middle {
+                .cm-s-obsidian .${className}.cm-custom-highlight-middle,
+                .cm-s-obsidian .cm-highlight.${className}.cm-custom-highlight-middle {
                     border-left: none !important;
                     border-right: none !important;
                     border-radius: 0 !important;
                 }
-                .cm-s-obsidian .${className}.cm-custom-highlight-end {
+                .cm-s-obsidian .${className}.cm-custom-highlight-end,
+                .cm-s-obsidian .cm-highlight.${className}.cm-custom-highlight-end {
                     border-left: none !important;
                     border-top-left-radius: 0 !important;
                     border-bottom-left-radius: 0 !important;
@@ -277,23 +258,11 @@ export default class CustomHighlightPlugin extends Plugin {
             .cm-custom-highlight-hidden {
                 display: none !important;
             }
-            /* Ensure the default highlights also follow the same unified rule if needed */
-            .cm-s-obsidian .cm-highlight.cm-custom-highlight-start {
-                border-right: none !important;
-                border-top-right-radius: 0 !important;
-                border-bottom-right-radius: 0 !important;
-                padding-left: 2px !important;
-            }
-            .cm-s-obsidian .cm-highlight.cm-custom-highlight-middle {
-                border-left: none !important;
-                border-right: none !important;
-                border-radius: 0 !important;
-            }
-            .cm-s-obsidian .cm-highlight.cm-custom-highlight-end {
-                border-left: none !important;
-                border-top-left-radius: 0 !important;
-                border-bottom-left-radius: 0 !important;
-                padding-right: 2px !important;
+
+            /* Disable native background when our custom highlight class is present */
+            .cm-s-obsidian .cm-highlight[class*="highlight-"] {
+                background-color: transparent !important;
+                box-shadow: none !important;
             }
         `;
         this.styleElement.textContent = css;
@@ -328,14 +297,11 @@ export default class CustomHighlightPlugin extends Plugin {
                         const start = from + match.index;
                         const end = from + match.index + match[0].length;
                         const emoji = match[1];
-                        const emojiName = emoji ? getEmojiName(emoji) : "default";
+                        const emojiName = emoji ? getEmojiName(emoji) : "";
                         const className = emoji ? `highlight-${emojiName}` : "";
 
-                        // If no emoji, we still want a class for the start/end/middle if it's a standard highlight
-                        // but only if we want to style standard highlights too?
-                        // The user said "se queda con el estandar" for ==text==,
-                        // but he wants the menu to appear on == markers too.
-                        const styleClass = className || "cm-highlight";
+                        // Clickable fragments even for standard highlights
+                        const styleClass = className || "cm-custom-highlight-clickable";
 
                         const isCursorInside = selection.ranges.some(r => r.from <= end && r.to >= start);
 
