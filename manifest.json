@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-custom-highlights",
+  "name": "Custom Highlights",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Use colored circles to customize your highlights.",
+  "author": "Jules",
+  "authorUrl": "https://github.com",
+  "isDesktopOnly": false
+}
