@@ -209,69 +209,99 @@ export default class CustomHighlightPlugin extends Plugin {
 
     updateStyles() {
         let css = '';
+
+        // Base styles for all highlight fragments (Standard and Custom)
+        css += `
+            .markdown-rendered mark,
+            .cm-s-obsidian [class*="cm-custom-highlight-"] {
+                background-clip: padding-box !important;
+                box-decoration-break: slice !important;
+                -webkit-box-decoration-break: slice !important;
+                box-shadow: none !important;
+                padding-top: 1px !important;
+                padding-bottom: 1px !important;
+            }
+
+            /* Fragment-Based Box Model to prevent segmentation */
+            .cm-s-obsidian .cm-custom-highlight-start {
+                border-style: solid !important;
+                border-right: none !important;
+                padding-left: 4px !important;
+            }
+            .cm-s-obsidian .cm-custom-highlight-emoji,
+            .cm-s-obsidian .cm-custom-highlight-middle {
+                border-style: solid !important;
+                border-left: none !important;
+                border-right: none !important;
+                border-radius: 0 !important;
+            }
+            .cm-s-obsidian .cm-custom-highlight-end {
+                border-style: solid !important;
+                border-left: none !important;
+                padding-right: 4px !important;
+            }
+
+            /* Standard Highlight "Boxification" */
+            .cm-s-obsidian [class*="cm-custom-highlight-"]:not([class*="highlight-"]) {
+                background-color: var(--text-highlight-bg) !important;
+                border-color: var(--text-highlight-bg) !important; /* Slightly visible border */
+                border-width: 1px !important;
+            }
+            .cm-s-obsidian .cm-custom-highlight-start:not([class*="highlight-"]) {
+                border-top-left-radius: 4px !important;
+                border-bottom-left-radius: 4px !important;
+            }
+            .cm-s-obsidian .cm-custom-highlight-end:not([class*="highlight-"]) {
+                border-top-right-radius: 4px !important;
+                border-bottom-right-radius: 4px !important;
+            }
+        `;
+
         for (const [emoji, style] of Object.entries(this.settings.styles)) {
             const className = `highlight-${getEmojiName(emoji)}`;
+
+            // Reading Mode (standard <mark>)
             css += `
-                .markdown-rendered .${className},
-                .cm-s-obsidian .${className} {
+                .markdown-rendered mark.${className} {
                     background-color: ${style.backgroundColor} !important;
                     color: ${style.textColor} !important;
                     border: ${style.borderWidth} solid ${style.borderColor} !important;
                     border-radius: ${style.borderRadius} !important;
-                    background-clip: padding-box !important;
-                    box-decoration-break: slice !important;
-                    -webkit-box-decoration-break: slice !important;
-                    box-shadow: none !important;
-                    padding: 0 !important;
                 }
+            `;
 
-                /* Unified Look Fragments */
-                .cm-s-obsidian .cm-custom-highlight-start {
-                    border-right: none !important;
-                    border-top-right-radius: 0 !important;
-                    border-bottom-right-radius: 0 !important;
-                    padding-left: 4px !important;
+            // Editor Mode (Fragment Based)
+            css += `
+                .cm-s-obsidian .${className} {
+                    background-color: ${style.backgroundColor} !important;
+                    color: ${style.textColor} !important;
+                    border-color: ${style.borderColor} !important;
+                    border-width: ${style.borderWidth} !important;
                 }
-                .cm-s-obsidian .cm-custom-highlight-emoji {
-                    border-left: none !important;
-                    border-right: none !important;
-                    border-radius: 0 !important;
+                .cm-s-obsidian .${className}.cm-custom-highlight-start {
+                    border-top-left-radius: ${style.borderRadius} !important;
+                    border-bottom-left-radius: ${style.borderRadius} !important;
                 }
-                .cm-s-obsidian .cm-custom-highlight-middle {
-                    border-left: none !important;
-                    border-right: none !important;
-                    border-radius: 0 !important;
-                }
-                .cm-s-obsidian .cm-custom-highlight-end {
-                    border-left: none !important;
-                    border-top-left-radius: 0 !important;
-                    border-bottom-left-radius: 0 !important;
-                    padding-right: 4px !important;
+                .cm-s-obsidian .${className}.cm-custom-highlight-end {
+                    border-top-right-radius: ${style.borderRadius} !important;
+                    border-bottom-right-radius: ${style.borderRadius} !important;
                 }
             `;
         }
+
         css += `
             .cm-custom-highlight-hidden {
                 display: none !important;
             }
 
-            /* GHOST KILLER: More aggressive override of Obsidian's native highlight */
-            /* Using :has() and multiple classes to ensure we win specificity */
-            .markdown-source-view.mod-cm6 .cm-content .cm-highlight:has([class*="cm-custom-highlight-"]),
-            .markdown-source-view.mod-cm6 .cm-content .cm-highlight[class*="highlight-"],
-            .markdown-source-view.mod-cm6 .cm-content .cm-highlight.cm-custom-highlight-start,
-            .markdown-source-view.mod-cm6 .cm-content .cm-highlight.cm-custom-highlight-middle,
-            .markdown-source-view.mod-cm6 .cm-content .cm-highlight.cm-custom-highlight-end,
-            .markdown-source-view.mod-cm6 .cm-content .cm-highlight.cm-custom-highlight-emoji {
+            /* GHOST KILLER: Force Obsidian's native highlight to be invisible when our fragments are active */
+            .markdown-source-view.mod-cm6 .cm-content .cm-highlight:has(> [class*="cm-custom-highlight-"]),
+            .markdown-source-view.mod-cm6 .cm-content .cm-highlight[class*="cm-custom-highlight-"],
+            .markdown-source-view.mod-cm6 .cm-content .cm-highlight:has([class*="cm-custom-highlight-"]) {
                 background-color: transparent !important;
                 box-shadow: none !important;
                 border: none !important;
-            }
-
-            /* For standard highlights (no emoji), we need to ensure they still have a background */
-            /* We apply it to our fragments if they don't have a custom color class */
-            .cm-s-obsidian [class*="cm-custom-highlight-"]:not([class*="highlight-"]) {
-                background-color: var(--text-highlight-bg);
+                padding: 0 !important;
             }
         `;
         this.styleElement.textContent = css;
