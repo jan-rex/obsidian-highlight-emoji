@@ -65,10 +65,10 @@ export default class CustomHighlightPlugin extends Plugin {
             // Only trigger if clicking on Start, End or Emoji fragments
             // We strictly exclude the "middle" part to avoid triggering on text clicks
             const isClickableFragment = (
-                target.classList.contains('cm-custom-highlight-start') ||
-                target.classList.contains('cm-custom-highlight-end') ||
-                target.classList.contains('cm-custom-highlight-emoji')
-            ) && !target.classList.contains('cm-custom-highlight-middle');
+                target.closest('.cm-custom-highlight-start') ||
+                target.closest('.cm-custom-highlight-end') ||
+                target.closest('.cm-custom-highlight-emoji')
+            ) && !target.closest('.cm-custom-highlight-middle');
 
             if (isClickableFragment) {
                 const editor = view.editor;
@@ -226,23 +226,23 @@ export default class CustomHighlightPlugin extends Plugin {
                 }
 
                 /* Unified Look Fragments */
-                .cm-s-obsidian .${className}.cm-custom-highlight-start {
+                .cm-s-obsidian .cm-custom-highlight-start {
                     border-right: none !important;
                     border-top-right-radius: 0 !important;
                     border-bottom-right-radius: 0 !important;
                     padding-left: 4px !important;
                 }
-                .cm-s-obsidian .${className}.cm-custom-highlight-emoji {
+                .cm-s-obsidian .cm-custom-highlight-emoji {
                     border-left: none !important;
                     border-right: none !important;
                     border-radius: 0 !important;
                 }
-                .cm-s-obsidian .${className}.cm-custom-highlight-middle {
+                .cm-s-obsidian .cm-custom-highlight-middle {
                     border-left: none !important;
                     border-right: none !important;
                     border-radius: 0 !important;
                 }
-                .cm-s-obsidian .${className}.cm-custom-highlight-end {
+                .cm-s-obsidian .cm-custom-highlight-end {
                     border-left: none !important;
                     border-top-left-radius: 0 !important;
                     border-bottom-left-radius: 0 !important;
@@ -255,25 +255,24 @@ export default class CustomHighlightPlugin extends Plugin {
                 display: none !important;
             }
 
-            /* GHOST KILLER: Override Obsidian's native highlight background ONLY when our fragments are present */
-            .cm-s-obsidian .cm-highlight.cm-custom-highlight-start,
-            .cm-s-obsidian .cm-highlight.cm-custom-highlight-middle,
-            .cm-s-obsidian .cm-highlight.cm-custom-highlight-end,
-            .cm-s-obsidian .cm-highlight.cm-custom-highlight-emoji {
+            /* GHOST KILLER: More aggressive override of Obsidian's native highlight */
+            /* Using :has() and multiple classes to ensure we win specificity */
+            .markdown-source-view.mod-cm6 .cm-content .cm-highlight:has([class*="cm-custom-highlight-"]),
+            .markdown-source-view.mod-cm6 .cm-content .cm-highlight[class*="highlight-"],
+            .markdown-source-view.mod-cm6 .cm-content .cm-highlight.cm-custom-highlight-start,
+            .markdown-source-view.mod-cm6 .cm-content .cm-highlight.cm-custom-highlight-middle,
+            .markdown-source-view.mod-cm6 .cm-content .cm-highlight.cm-custom-highlight-end,
+            .markdown-source-view.mod-cm6 .cm-content .cm-highlight.cm-custom-highlight-emoji {
                 background-color: transparent !important;
                 box-shadow: none !important;
                 border: none !important;
             }
 
-            /* Now, if the fragment is part of a custom colored highlight, it already has the color via the highlight- class */
-            /* If it is a STANDARD highlight, we need to apply the default highlight color back to the fragments themselves */
-            .cm-s-obsidian .cm-custom-highlight-start:not([class*="highlight-"]),
-            .cm-s-obsidian .cm-custom-highlight-middle:not([class*="highlight-"]),
-            .cm-s-obsidian .cm-custom-highlight-end:not([class*="highlight-"]) {
-                background-color: var(--text-highlight-bg) !important;
+            /* For standard highlights (no emoji), we need to ensure they still have a background */
+            /* We apply it to our fragments if they don't have a custom color class */
+            .cm-s-obsidian [class*="cm-custom-highlight-"]:not([class*="highlight-"]) {
+                background-color: var(--text-highlight-bg);
             }
-
-            /* But if it HAS a colored class, the first loop already handled it with !important */
         `;
         this.styleElement.textContent = css;
     }
@@ -313,30 +312,45 @@ export default class CustomHighlightPlugin extends Plugin {
 
                         if (isLivePreview && !isCursorInside && emoji) {
                             // Hidden markers mode
-                            builder.add(start + 2 + emoji.length, end - 2, Decoration.mark({ class: `${className}` }));
-                            builder.add(start, start + 2 + emoji.length, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
-                            builder.add(end - 2, end, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
+                            // Use different startSides to ensure sorting even with same 'from'
+                            // 1. Background (outer)
+                            builder.add(start, end, Decoration.mark({ class: `${className}`, startSide: -1 }));
+
+                            // 2. Hide markers and emoji (inner)
+                            builder.add(start, start + 2 + emoji.length, Decoration.mark({ class: 'cm-custom-highlight-hidden', startSide: 1 }));
+                            builder.add(end - 2, end, Decoration.mark({ class: 'cm-custom-highlight-hidden', startSide: 1 }));
                         } else {
                             // Visible markers mode (Source Mode or Cursor Inside)
                             const emojiLen = emoji ? emoji.length : 0;
 
-                            // Apply background class to each fragment separately to avoid nesting issues with native formatter
+                            // 1. Background (outer)
+                            if (className) {
+                                builder.add(start, end, Decoration.mark({ class: `${className}`, startSide: -1 }));
+                            }
+
+                            // 2. Fragment classes (inner)
                             builder.add(start, start + 2, Decoration.mark({
-                                class: `${className} cm-custom-highlight-start`
+                                class: 'cm-custom-highlight-start',
+                                startSide: 1
                             }));
 
-                            if (emoji) {
+                            if (emoji && (start + 2 < start + 2 + emojiLen)) {
                                 builder.add(start + 2, start + 2 + emojiLen, Decoration.mark({
-                                    class: `${className} cm-custom-highlight-emoji`
+                                    class: 'cm-custom-highlight-emoji',
+                                    startSide: 1
                                 }));
                             }
 
-                            builder.add(start + 2 + emojiLen, end - 2, Decoration.mark({
-                                class: `${className} cm-custom-highlight-middle`
-                            }));
+                            if (start + 2 + emojiLen < end - 2) {
+                                builder.add(start + 2 + emojiLen, end - 2, Decoration.mark({
+                                    class: 'cm-custom-highlight-middle',
+                                    startSide: 1
+                                }));
+                            }
 
                             builder.add(end - 2, end, Decoration.mark({
-                                class: `${className} cm-custom-highlight-end`
+                                class: 'cm-custom-highlight-end',
+                                startSide: 1
                             }));
                         }
                     }
