@@ -56,29 +56,31 @@ export default class CustomHighlightPlugin extends Plugin {
         this.registerEditorExtension(this.createHighlightExtension());
         this.registerEditorSuggest(new ColorSuggest(this.app, this));
 
-        this.registerDomEvent(document, 'keydown', (evt: KeyboardEvent) => {
-            if (evt.key === '=') {
-                const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-                if (!view) return;
-                const editor = view.editor;
-                const selection = editor.getSelection();
-                if (selection) {
-                    // Check after a tiny delay if the selection was wrapped in ==
-                    setTimeout(() => {
-                        const cursor = editor.getCursor();
-                        const line = editor.getLine(cursor.line);
-                        const sub = line.substring(0, cursor.ch);
-                        if (sub.endsWith('==')) {
-                            const startPos = sub.lastIndexOf('==', sub.length - 3);
-                            if (startPos !== -1) {
-                                // Trigger suggest by moving cursor to after first ==
-                                editor.setCursor({ line: cursor.line, ch: startPos + 2 });
-                            }
-                        }
-                    }, 50);
+        this.registerEvent(this.app.workspace.on("editor-change", (editor, view) => {
+            // Check if we just wrapped a selection with ==
+            // This is a bit tricky to detect perfectly without knowing the previous state,
+            // but we can look for the pattern ==text== where the cursor is at the end.
+            const cursor = editor.getCursor();
+            const line = editor.getLine(cursor.line);
+            const sub = line.substring(0, cursor.ch);
+
+            // If the line now ends with == and has another == before it,
+            // and it was likely a selection wrap
+            if (sub.endsWith('==')) {
+                const lastTwo = sub.substring(sub.length - 2);
+                const beforeThat = sub.substring(0, sub.length - 2);
+                const startPos = beforeThat.lastIndexOf('==');
+
+                if (startPos !== -1) {
+                    const content = beforeThat.substring(startPos + 2);
+                    // If content doesn't contain == or emojis, it was likely a fresh wrap
+                    if (content.length > 0 && !content.includes('==') && !/[🔴🟠🟡🟢🔵🟣⚫⚪🟤]/.test(content)) {
+                        // Move cursor to after the first == to trigger the color picker
+                        editor.setCursor({ line: cursor.line, ch: startPos + 2 });
+                    }
                 }
             }
-        });
+        }));
 
         this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
             const target = evt.target as HTMLElement;
@@ -86,10 +88,12 @@ export default class CustomHighlightPlugin extends Plugin {
             if (!view) return;
 
             // Handle highlight click to change color
-            // Check if we clicked on a custom highlight (Live Preview) or rendered highlight (Reading Mode)
-            const isCustomHighlight = Array.from(target.classList).some(cls => cls.startsWith('highlight-'));
+            // Only trigger if clicking on Start, End or Emoji fragments
+            const isClickableFragment = target.classList.contains('cm-custom-highlight-start') ||
+                                       target.classList.contains('cm-custom-highlight-end') ||
+                                       target.classList.contains('cm-custom-highlight-emoji');
 
-            if (isCustomHighlight) {
+            if (isClickableFragment) {
                 const editor = view.editor;
                 // @ts-ignore
                 const cm = editor.cm;
@@ -109,28 +113,21 @@ export default class CustomHighlightPlugin extends Plugin {
 
                     // If we clicked within a highlight
                     if (relativePos >= start && relativePos <= end) {
-                        const emoji = match[1];
-                        // Show menu only if clicking on emoji or on the starting markers == (if no emoji)
-                        const isEmojiClicked = emoji && (relativePos >= start + 2 && relativePos <= start + 2 + emoji.length);
-                        const isMarkerClicked = !emoji && (relativePos >= start && relativePos <= start + 2);
-
-                        if (isEmojiClicked || isMarkerClicked) {
-                            const content = match[2];
-                            const menu = new Menu();
-                            Object.keys(this.settings.styles).forEach(emoji => {
-                                menu.addItem((item) => {
-                                    item.setTitle(`${emoji} ${getEmojiName(emoji)}`)
-                                        .onClick(() => {
-                                            editor.replaceRange(`==${emoji}${content}==`,
-                                                editor.offsetToPos(lineOffset + start),
-                                                editor.offsetToPos(lineOffset + end));
-                                        });
-                                });
+                        const content = match[2];
+                        const menu = new Menu();
+                        Object.keys(this.settings.styles).forEach(emoji => {
+                            menu.addItem((item) => {
+                                item.setTitle(`${emoji} ${getEmojiName(emoji)}`)
+                                    .onClick(() => {
+                                        editor.replaceRange(`==${emoji}${content}==`,
+                                            editor.offsetToPos(lineOffset + start),
+                                            editor.offsetToPos(lineOffset + end));
+                                    });
                             });
-                            menu.showAtMouseEvent(evt);
-                            evt.preventDefault();
-                            break;
-                        }
+                        });
+                        menu.showAtMouseEvent(evt);
+                        evt.preventDefault();
+                        break;
                     }
                 }
             }
@@ -244,7 +241,11 @@ export default class CustomHighlightPlugin extends Plugin {
                     color: ${style.textColor} !important;
                     border: ${style.borderWidth} solid ${style.borderColor} !important;
                     border-radius: ${style.borderRadius} !important;
-                    padding: 0 2px;
+                    padding: 0;
+                    /* Ensure background is clipped by border radius */
+                    background-clip: padding-box !important;
+                    box-decoration-break: slice !important;
+                    -webkit-box-decoration-break: slice !important;
                 }
 
                 /* Unified look for fragmented highlights */
@@ -252,6 +253,12 @@ export default class CustomHighlightPlugin extends Plugin {
                     border-right: none !important;
                     border-top-right-radius: 0 !important;
                     border-bottom-right-radius: 0 !important;
+                    padding-left: 2px !important;
+                }
+                .cm-s-obsidian .${className}.cm-custom-highlight-emoji {
+                    border-left: none !important;
+                    border-right: none !important;
+                    border-radius: 0 !important;
                 }
                 .cm-s-obsidian .${className}.cm-custom-highlight-middle {
                     border-left: none !important;
@@ -262,12 +269,31 @@ export default class CustomHighlightPlugin extends Plugin {
                     border-left: none !important;
                     border-top-left-radius: 0 !important;
                     border-bottom-left-radius: 0 !important;
+                    padding-right: 2px !important;
                 }
             `;
         }
         css += `
             .cm-custom-highlight-hidden {
                 display: none !important;
+            }
+            /* Ensure the default highlights also follow the same unified rule if needed */
+            .cm-s-obsidian .cm-highlight.cm-custom-highlight-start {
+                border-right: none !important;
+                border-top-right-radius: 0 !important;
+                border-bottom-right-radius: 0 !important;
+                padding-left: 2px !important;
+            }
+            .cm-s-obsidian .cm-highlight.cm-custom-highlight-middle {
+                border-left: none !important;
+                border-right: none !important;
+                border-radius: 0 !important;
+            }
+            .cm-s-obsidian .cm-highlight.cm-custom-highlight-end {
+                border-left: none !important;
+                border-top-left-radius: 0 !important;
+                border-bottom-left-radius: 0 !important;
+                padding-right: 2px !important;
             }
         `;
         this.styleElement.textContent = css;
@@ -294,28 +320,51 @@ export default class CustomHighlightPlugin extends Plugin {
 
                 for (const { from, to } of view.visibleRanges) {
                     const text = view.state.doc.sliceString(from, to);
-                    const regex = /==([🔴🟠🟡🟢🔵🟣⚫⚪🟤])(.*?)(==)/gu;
+                    // Match both with and without emoji
+                    const regex = /==([🔴🟠🟡🟢🔵🟣⚫⚪🟤])?(.*?)(==)/gu;
 
                     let match;
                     while ((match = regex.exec(text)) !== null) {
                         const start = from + match.index;
                         const end = from + match.index + match[0].length;
                         const emoji = match[1];
-                        const emojiName = getEmojiName(emoji);
-                        const className = `highlight-${emojiName}`;
+                        const emojiName = emoji ? getEmojiName(emoji) : "default";
+                        const className = emoji ? `highlight-${emojiName}` : "";
+
+                        // If no emoji, we still want a class for the start/end/middle if it's a standard highlight
+                        // but only if we want to style standard highlights too?
+                        // The user said "se queda con el estandar" for ==text==,
+                        // but he wants the menu to appear on == markers too.
+                        const styleClass = className || "cm-highlight";
 
                         const isCursorInside = selection.ranges.some(r => r.from <= end && r.to >= start);
 
-                        if (isLivePreview && !isCursorInside) {
-                            // Hidden markers when cursor is outside
+                        if (isLivePreview && !isCursorInside && emoji) {
+                            // Hidden markers when cursor is outside (only for custom highlights)
                             builder.add(start, start + 2 + emoji.length, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
                             builder.add(start + 2 + emoji.length, end - 2, Decoration.mark({ class: className }));
                             builder.add(end - 2, end, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
                         } else {
-                            // Source Mode or Cursor Inside: Unified look
-                            builder.add(start, start + 2, Decoration.mark({ class: `${className} cm-custom-highlight-start` }));
-                            builder.add(start + 2, end - 2, Decoration.mark({ class: `${className} cm-custom-highlight-middle` }));
-                            builder.add(end - 2, end, Decoration.mark({ class: `${className} cm-custom-highlight-end` }));
+                            // Source Mode or Cursor Inside, or Standard Highlight: Unified look
+                            const emojiLen = emoji ? emoji.length : 0;
+
+                            builder.add(start, start + 2, Decoration.mark({
+                                class: `${styleClass} cm-custom-highlight-start`
+                            }));
+
+                            if (emoji) {
+                                builder.add(start + 2, start + 2 + emojiLen, Decoration.mark({
+                                    class: `${styleClass} cm-custom-highlight-emoji`
+                                }));
+                            }
+
+                            builder.add(start + 2 + emojiLen, end - 2, Decoration.mark({
+                                class: `${styleClass} cm-custom-highlight-middle`
+                            }));
+
+                            builder.add(end - 2, end, Decoration.mark({
+                                class: `${styleClass} cm-custom-highlight-end`
+                            }));
                         }
                     }
                 }
