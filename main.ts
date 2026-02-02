@@ -218,34 +218,25 @@ export default class CustomHighlightPlugin extends Plugin {
                 box-decoration-break: slice !important;
                 -webkit-box-decoration-break: slice !important;
                 box-shadow: none !important;
-                padding-top: 1px !important;
-                padding-bottom: 1px !important;
+                border-width: 0 !important; /* Reset borders to avoid white boxes */
+                border-style: solid !important;
+                border-color: transparent !important;
             }
 
-            /* Fragment-Based Box Model to prevent segmentation */
-            .cm-s-obsidian .cm-custom-highlight-start {
-                border-style: solid !important;
-                border-right: none !important;
+            .cm-s-obsidian .cm-custom-highlight-start[class*="highlight-"] {
                 padding-left: 4px !important;
             }
             .cm-s-obsidian .cm-custom-highlight-emoji,
             .cm-s-obsidian .cm-custom-highlight-middle {
-                border-style: solid !important;
-                border-left: none !important;
-                border-right: none !important;
                 border-radius: 0 !important;
             }
-            .cm-s-obsidian .cm-custom-highlight-end {
-                border-style: solid !important;
-                border-left: none !important;
+            .cm-s-obsidian .cm-custom-highlight-end[class*="highlight-"] {
                 padding-right: 4px !important;
             }
 
-            /* Standard Highlight "Boxification" */
+            /* Standard Highlight "Boxification" - Just background and radius, no forced borders or padding */
             .cm-s-obsidian [class*="cm-custom-highlight-"]:not([class*="highlight-"]) {
                 background-color: var(--text-highlight-bg) !important;
-                border-color: var(--text-highlight-bg) !important; /* Slightly visible border */
-                border-width: 1px !important;
             }
             .cm-s-obsidian .cm-custom-highlight-start:not([class*="highlight-"]) {
                 border-top-left-radius: 4px !important;
@@ -276,13 +267,16 @@ export default class CustomHighlightPlugin extends Plugin {
                     background-color: ${style.backgroundColor} !important;
                     color: ${style.textColor} !important;
                     border-color: ${style.borderColor} !important;
-                    border-width: ${style.borderWidth} !important;
+                    border-top-width: ${style.borderWidth} !important;
+                    border-bottom-width: ${style.borderWidth} !important;
                 }
                 .cm-s-obsidian .${className}.cm-custom-highlight-start {
+                    border-left-width: ${style.borderWidth} !important;
                     border-top-left-radius: ${style.borderRadius} !important;
                     border-bottom-left-radius: ${style.borderRadius} !important;
                 }
                 .cm-s-obsidian .${className}.cm-custom-highlight-end {
+                    border-right-width: ${style.borderWidth} !important;
                     border-top-right-radius: ${style.borderRadius} !important;
                     border-bottom-right-radius: ${style.borderRadius} !important;
                 }
@@ -294,15 +288,8 @@ export default class CustomHighlightPlugin extends Plugin {
                 display: none !important;
             }
 
-            /* GHOST KILLER: Force Obsidian's native highlight to be invisible when our fragments are active */
-            .markdown-source-view.mod-cm6 .cm-content .cm-highlight:has(> [class*="cm-custom-highlight-"]),
-            .markdown-source-view.mod-cm6 .cm-content .cm-highlight[class*="cm-custom-highlight-"],
-            .markdown-source-view.mod-cm6 .cm-content .cm-highlight:has([class*="cm-custom-highlight-"]) {
-                background-color: transparent !important;
-                box-shadow: none !important;
-                border: none !important;
-                padding: 0 !important;
-            }
+            /* We no longer kill the Ghost Effect globally to preserve standard highlights */
+            /* But we do ensure our colored highlights win the background battle on their own elements */
         `;
         this.styleElement.textContent = css;
     }
