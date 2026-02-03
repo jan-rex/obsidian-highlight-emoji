@@ -228,6 +228,23 @@ export default class CustomHighlightPlugin extends Plugin {
                 border-radius: 0 !important;
             }
 
+            /* Fix Lateral Borders when markers are hidden */
+            .cm-s-obsidian .cm-custom-highlight-middle.cm-custom-highlight-markers-hidden {
+                border-left-width: var(--highlight-border-width, 0) !important;
+                border-right-width: var(--highlight-border-width, 0) !important;
+                border-top-left-radius: var(--highlight-border-radius, 0) !important;
+                border-bottom-left-radius: var(--highlight-border-radius, 0) !important;
+                border-top-right-radius: var(--highlight-border-radius, 0) !important;
+                border-bottom-right-radius: var(--highlight-border-radius, 0) !important;
+                padding-left: 4px !important;
+                padding-right: 4px !important;
+            }
+
+            /* Kill Ghost Effect (Obsidian's default highlight background) */
+            .cm-s-obsidian .cm-highlight[class*="highlight-"] {
+                background-color: transparent !important;
+            }
+
             /* Standard Highlight "Boxification" - Just background and radius, no forced borders */
             .cm-s-obsidian [class*="cm-custom-highlight-"]:not([class*="highlight-"]) {
                 background-color: var(--text-highlight-bg) !important;
@@ -266,6 +283,10 @@ export default class CustomHighlightPlugin extends Plugin {
                     border-color: ${style.borderColor} !important;
                     border-top-width: ${style.borderWidth} !important;
                     border-bottom-width: ${style.borderWidth} !important;
+
+                    /* Variables for use in hidden mode */
+                    --highlight-border-width: ${style.borderWidth};
+                    --highlight-border-radius: ${style.borderRadius};
                 }
                 .cm-s-obsidian .${className}.cm-custom-highlight-start {
                     border-left-width: ${style.borderWidth} !important;
@@ -336,8 +357,11 @@ export default class CustomHighlightPlugin extends Plugin {
                             }
 
                             // 2. We only decorate the content part to keep it clean and avoid nesting issues
+                            // In hidden mode, we add cm-custom-highlight-markers-hidden to restore lateral borders
                             if (start + 2 + emoji.length < end - 2) {
-                                builder.add(start + 2 + emoji.length, end - 2, Decoration.mark({ class: `${className} cm-custom-highlight-middle` }));
+                                builder.add(start + 2 + emoji.length, end - 2, Decoration.mark({
+                                    class: `${className} cm-custom-highlight-middle cm-custom-highlight-markers-hidden`
+                                }));
                             }
 
                             // 3. Hide markers at the end
