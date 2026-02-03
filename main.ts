@@ -218,33 +218,29 @@ export default class CustomHighlightPlugin extends Plugin {
                 box-decoration-break: slice !important;
                 -webkit-box-decoration-break: slice !important;
                 box-shadow: none !important;
-                border-width: 0 !important; /* Reset borders to avoid white boxes */
                 border-style: solid !important;
-                border-color: transparent !important;
+                border-width: 0 !important; /* Start with no borders to avoid segmented look unless colored */
+                box-sizing: border-box !important;
             }
 
-            .cm-s-obsidian .cm-custom-highlight-start[class*="highlight-"] {
-                padding-left: 4px !important;
-            }
             .cm-s-obsidian .cm-custom-highlight-emoji,
             .cm-s-obsidian .cm-custom-highlight-middle {
                 border-radius: 0 !important;
             }
-            .cm-s-obsidian .cm-custom-highlight-end[class*="highlight-"] {
-                padding-right: 4px !important;
-            }
 
-            /* Standard Highlight "Boxification" - Just background and radius, no forced borders or padding */
+            /* Standard Highlight "Boxification" - Just background and radius, no forced borders */
             .cm-s-obsidian [class*="cm-custom-highlight-"]:not([class*="highlight-"]) {
                 background-color: var(--text-highlight-bg) !important;
             }
             .cm-s-obsidian .cm-custom-highlight-start:not([class*="highlight-"]) {
                 border-top-left-radius: 4px !important;
                 border-bottom-left-radius: 4px !important;
+                padding-left: 2px !important;
             }
             .cm-s-obsidian .cm-custom-highlight-end:not([class*="highlight-"]) {
                 border-top-right-radius: 4px !important;
                 border-bottom-right-radius: 4px !important;
+                padding-right: 2px !important;
             }
         `;
 
@@ -262,6 +258,7 @@ export default class CustomHighlightPlugin extends Plugin {
             `;
 
             // Editor Mode (Fragment Based)
+            // Note: We apply borders selectively to fragments to create a cohesive box
             css += `
                 .cm-s-obsidian .${className} {
                     background-color: ${style.backgroundColor} !important;
@@ -274,11 +271,13 @@ export default class CustomHighlightPlugin extends Plugin {
                     border-left-width: ${style.borderWidth} !important;
                     border-top-left-radius: ${style.borderRadius} !important;
                     border-bottom-left-radius: ${style.borderRadius} !important;
+                    padding-left: 4px !important;
                 }
                 .cm-s-obsidian .${className}.cm-custom-highlight-end {
                     border-right-width: ${style.borderWidth} !important;
                     border-top-right-radius: ${style.borderRadius} !important;
                     border-bottom-right-radius: ${style.borderRadius} !important;
+                    padding-right: 4px !important;
                 }
             `;
         }
@@ -329,45 +328,37 @@ export default class CustomHighlightPlugin extends Plugin {
 
                         if (isLivePreview && !isCursorInside && emoji) {
                             // Hidden markers mode
-                            // Use different startSides to ensure sorting even with same 'from'
-                            // 1. Background (outer)
-                            builder.add(start, end, Decoration.mark({ class: `${className}`, startSide: -1 }));
+                            // We only decorate the content part to keep it clean and avoid nesting issues
+                            builder.add(start + 2 + emoji.length, end - 2, Decoration.mark({ class: `${className} cm-custom-highlight-middle` }));
 
-                            // 2. Hide markers and emoji (inner)
-                            builder.add(start, start + 2 + emoji.length, Decoration.mark({ class: 'cm-custom-highlight-hidden', startSide: 1 }));
-                            builder.add(end - 2, end, Decoration.mark({ class: 'cm-custom-highlight-hidden', startSide: 1 }));
+                            // Hide markers
+                            builder.add(start, start + 2 + emoji.length, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
+                            builder.add(end - 2, end, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
                         } else {
                             // Visible markers mode (Source Mode or Cursor Inside)
                             const emojiLen = emoji ? emoji.length : 0;
+                            const fullClassName = className ? `${className} ` : "";
 
-                            // 1. Background (outer)
-                            if (className) {
-                                builder.add(start, end, Decoration.mark({ class: `${className}`, startSide: -1 }));
-                            }
-
-                            // 2. Fragment classes (inner)
+                            // Apply background class DIRECTLY to each fragment to avoid nesting spans
+                            // This fixes underscore italics (_) boundary issues and ensures styling is applied correctly
                             builder.add(start, start + 2, Decoration.mark({
-                                class: 'cm-custom-highlight-start',
-                                startSide: 1
+                                class: `${fullClassName}cm-custom-highlight-start`
                             }));
 
                             if (emoji && (start + 2 < start + 2 + emojiLen)) {
                                 builder.add(start + 2, start + 2 + emojiLen, Decoration.mark({
-                                    class: 'cm-custom-highlight-emoji',
-                                    startSide: 1
+                                    class: `${fullClassName}cm-custom-highlight-emoji`
                                 }));
                             }
 
                             if (start + 2 + emojiLen < end - 2) {
                                 builder.add(start + 2 + emojiLen, end - 2, Decoration.mark({
-                                    class: 'cm-custom-highlight-middle',
-                                    startSide: 1
+                                    class: `${fullClassName}cm-custom-highlight-middle`
                                 }));
                             }
 
                             builder.add(end - 2, end, Decoration.mark({
-                                class: 'cm-custom-highlight-end',
-                                startSide: 1
+                                class: `${fullClassName}cm-custom-highlight-end`
                             }));
                         }
                     }
