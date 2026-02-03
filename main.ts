@@ -328,12 +328,22 @@ export default class CustomHighlightPlugin extends Plugin {
 
                         if (isLivePreview && !isCursorInside && emoji) {
                             // Hidden markers mode
-                            // We only decorate the content part to keep it clean and avoid nesting issues
-                            builder.add(start + 2 + emoji.length, end - 2, Decoration.mark({ class: `${className} cm-custom-highlight-middle` }));
+                            // IMPORTANT: Add in order of 'from' position to avoid CM6 error
 
-                            // Hide markers
-                            builder.add(start, start + 2 + emoji.length, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
-                            builder.add(end - 2, end, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
+                            // 1. Hide markers and emoji at the start
+                            if (start < start + 2 + emoji.length) {
+                                builder.add(start, start + 2 + emoji.length, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
+                            }
+
+                            // 2. We only decorate the content part to keep it clean and avoid nesting issues
+                            if (start + 2 + emoji.length < end - 2) {
+                                builder.add(start + 2 + emoji.length, end - 2, Decoration.mark({ class: `${className} cm-custom-highlight-middle` }));
+                            }
+
+                            // 3. Hide markers at the end
+                            if (end - 2 < end) {
+                                builder.add(end - 2, end, Decoration.mark({ class: 'cm-custom-highlight-hidden' }));
+                            }
                         } else {
                             // Visible markers mode (Source Mode or Cursor Inside)
                             const emojiLen = emoji ? emoji.length : 0;
@@ -341,9 +351,11 @@ export default class CustomHighlightPlugin extends Plugin {
 
                             // Apply background class DIRECTLY to each fragment to avoid nesting spans
                             // This fixes underscore italics (_) boundary issues and ensures styling is applied correctly
-                            builder.add(start, start + 2, Decoration.mark({
-                                class: `${fullClassName}cm-custom-highlight-start`
-                            }));
+                            if (start < start + 2) {
+                                builder.add(start, start + 2, Decoration.mark({
+                                    class: `${fullClassName}cm-custom-highlight-start`
+                                }));
+                            }
 
                             if (emoji && (start + 2 < start + 2 + emojiLen)) {
                                 builder.add(start + 2, start + 2 + emojiLen, Decoration.mark({
@@ -357,9 +369,11 @@ export default class CustomHighlightPlugin extends Plugin {
                                 }));
                             }
 
-                            builder.add(end - 2, end, Decoration.mark({
-                                class: `${fullClassName}cm-custom-highlight-end`
-                            }));
+                            if (end - 2 < end) {
+                                builder.add(end - 2, end, Decoration.mark({
+                                    class: `${fullClassName}cm-custom-highlight-end`
+                                }));
+                            }
                         }
                     }
                 }
